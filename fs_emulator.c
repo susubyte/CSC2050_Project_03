@@ -54,6 +54,8 @@ int main(int argc, char *argv[]) {
 			break;
 		} else if (n == 1 && strcmp(cmd, "ls") == 0) {
 			listContents();
+		} else if (n == 2 && strcmp(cmd, "cd") == 0) {
+		       changeDirectory(arg);	
 		} else {
 			printf("Unknown Command.\n");
 		}
@@ -81,6 +83,19 @@ void loadInodeList(const char *path) {
 	fclose(fp);
 }
 
+void changeDirectory(const char *name) {
+	for (int i = 0; i < MAX_INODES; i++) {
+		if (inodeList[i].type == 'd' && inodeList[i].parentInode == currentInode && strncmp(inodeList[i].name, name, NAME_LEN) == 0) {
+			currentInode = inodeList[i].inode;
+			return;
+		} else if (inodeList[i].type == 'f' && inodeList[i].parentInode == currentInode && strncmp(inodeList[i].name, name, NAME_LEN) == 0) {
+			printf("%s is a regular file.\n", name);
+			return;
+		}
+	}
+	printf("%s doesn't exist.\n", name);
+}
+
 void listContents() {
 	for (int i = 0; i < MAX_INODES; i++) {
 		if (inodeList[i].type != 0 && inodeList[i].parentInode == currentInode) {
@@ -88,3 +103,6 @@ void listContents() {
 		}
 	}
 }
+
+// void createDirectory(const char *name) {
+// }
