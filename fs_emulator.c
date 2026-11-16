@@ -23,6 +23,9 @@ void changeDirectory(const char *name);
 void listContents();
 void createDirectory(const char *name);
 void createFile(const char *name);
+int findEntry(const char *name);
+int findFreeInode();
+void createInode(const char *name, char type);
 
 int main(int argc, char *argv[]) {
 	if (argc != 2) {
@@ -56,11 +59,16 @@ int main(int argc, char *argv[]) {
 			listContents();
 		} else if (n == 2 && strcmp(cmd, "cd") == 0) {
 		       changeDirectory(arg);	
+		} else if (n == 2 && strcmp(cmd, "touch") == 0) {
+		       createFile(arg);	
+		} else if (n == 2 && strcmp(cmd, "mkdir") == 0) {
+			createDirectory(arg);
 		} else {
 			printf("Unknown Command.\n");
 		}
 	}
 
+	saveInodeList("inodes_list");
 	return 0;
 }
 
@@ -83,17 +91,34 @@ void loadInodeList(const char *path) {
 	fclose(fp);
 }
 
-void changeDirectory(const char *name) {
+void saveInodeList(const char *path) {
+	FILE *fp = fopen(path, "wb");
+	if (fp == NULL) {
+		perror("fopen");
+		return;
+	}
+
 	for (int i = 0; i < MAX_INODES; i++) {
-		if (inodeList[i].type == 'd' && inodeList[i].parentInode == currentInode && strncmp(inodeList[i].name, name, NAME_LEN) == 0) {
-			currentInode = inodeList[i].inode;
-			return;
-		} else if (inodeList[i].type == 'f' && inodeList[i].parentInode == currentInode && strncmp(inodeList[i].name, name, NAME_LEN) == 0) {
-			printf("%s is a regular file.\n", name);
-			return;
+		if (inodeList[i].type != 0) {
+			fwrite(&inodeList[i], sizeof(Inode), 1, fp);
 		}
 	}
-	printf("%s doesn't exist.\n", name);
+	fclose(fp);
+}
+
+void changeDirectory(const char *name) {
+	if (strcmp(name, "..") == 0) {
+		currentInode = inodeList[currentInode].parentInode;
+		return;
+	}
+	int entry = findEntry(name);
+	if (entry != -1 && inodeList[entry].type == 'd') {
+		currentInode = inodeList[entry].inode;
+	} else if (entry != -1) {
+		printf("%s is a regular file.\n", name);
+	} else {
+		printf("%s doesn't exist.\n", name);
+	}
 }
 
 void listContents() {
@@ -104,5 +129,61 @@ void listContents() {
 	}
 }
 
-// void createDirectory(const char *name) {
-// }
+void createFile(const char *name) {
+	if (findEntry(name) != -1) {
+		return;
+	}
+	createInode(name, 'f');
+}
+
+void createDirectory(const char *name) {
+	if (findEntry(name) != -1) {
+		printf("%.32s already exists.\n", name);
+		return;
+	}
+	createInode(name, 'd');
+}
+
+int findEntry(const char *name) {
+	for (int i = 0; i < MAX_INODES; i++) {
+		if (inodeList[i].type != 0 && inodeList[i].parentInode == currentInode && strncmp(inodeList[i].name, name, NAME_LEN) == 0) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+int findFreeInode() {
+	for (int i = 0; i < MAX_INODES; i++) {
+		if (inodeList[i].type == 0) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+void createInode(const char *name, char type) {
+	int slot = findFreeInode();
+	if (slot == -1) {
+		printf("No open inodes found.\n");
+		return;
+	}
+	inodeList[slot].inode = slot;
+	inodeList[slot].parentInode = currentInode;
+	inodeList[slot].type = type;
+	strncpy(inodeList[slot].name, name, NAME_LEN);
+	char filename[16];
+	snprintf(filename, sizeof(filename), "%u", inodeList[slot].inode);
+	FILE *fp = fopen(filename, "w");
+	if (fp == NULL) {
+		perror("fopen");
+		inodeList[slot].type = 0;
+		return;
+	}
+	if (type == 'f') {
+		fprintf(fp, "%.32s", inodeList[slot].name);
+	} else {
+		fprintf(fp, "%u .\n%u ..\n", inodeList[slot].inode, inodeList[slot].parentInode);
+	}
+	fclose(fp);
+}
