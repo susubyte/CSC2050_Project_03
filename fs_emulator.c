@@ -14,7 +14,6 @@ typedef struct {
 } Inode;
 
 Inode inodeList[MAX_INODES];
-size_t inodeCount = 0;
 uint32_t currentInode = 0;
 
 void loadInodeList(const char *path);
@@ -26,6 +25,7 @@ void createFile(const char *name);
 int findEntry(const char *name);
 int findFreeInode();
 void createInode(const char *name, char type);
+int inCurrentDirectory(int i);
 
 int main(int argc, char *argv[]) {
 	if (argc != 2) {
@@ -51,20 +51,23 @@ int main(int argc, char *argv[]) {
 		if (fgets(line, sizeof(line), stdin) == NULL) {
 			break;
 		}
-		char cmd[256], arg[256];
-		int n = sscanf(line, "%s %s", cmd, arg);
+		char cmd[256], arg[256], extra[256];
+		int n = sscanf(line, "%s %s %s", cmd, arg, extra);
+		if (n < 1) {
+			continue;
+		}
 		if (n == 1 && strcmp(cmd, "exit") == 0) {
 			break;
 		} else if (n == 1 && strcmp(cmd, "ls") == 0) {
 			listContents();
 		} else if (n == 2 && strcmp(cmd, "cd") == 0) {
-		       changeDirectory(arg);	
+		       	changeDirectory(arg);	
 		} else if (n == 2 && strcmp(cmd, "touch") == 0) {
-		       createFile(arg);	
+		       	createFile(arg);	
 		} else if (n == 2 && strcmp(cmd, "mkdir") == 0) {
 			createDirectory(arg);
 		} else {
-			printf("Unknown Command.\n");
+			printf("Unknown command or wrong number of arguments.\n");
 		}
 	}
 
@@ -123,7 +126,7 @@ void changeDirectory(const char *name) {
 
 void listContents() {
 	for (int i = 0; i < MAX_INODES; i++) {
-		if (inodeList[i].type != 0 && inodeList[i].parentInode == currentInode) {
+		if (inCurrentDirectory(i)) {
 			printf("inode: %u, type: %c, name: %.32s\n", inodeList[i].inode, inodeList[i].type, inodeList[i].name);
 		}
 	}
@@ -146,7 +149,7 @@ void createDirectory(const char *name) {
 
 int findEntry(const char *name) {
 	for (int i = 0; i < MAX_INODES; i++) {
-		if (inodeList[i].type != 0 && inodeList[i].parentInode == currentInode && strncmp(inodeList[i].name, name, NAME_LEN) == 0) {
+		if (inCurrentDirectory(i) && strncmp(inodeList[i].name, name, NAME_LEN) == 0) {
 			return i;
 		}
 	}
@@ -186,4 +189,8 @@ void createInode(const char *name, char type) {
 		fprintf(fp, "%u .\n%u ..\n", inodeList[slot].inode, inodeList[slot].parentInode);
 	}
 	fclose(fp);
+}
+
+int inCurrentDirectory(int i) {
+	return inodeList[i].type != 0 && inodeList[i].parentInode == currentInode;
 }
