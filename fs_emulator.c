@@ -1,3 +1,9 @@
+/*
+ * fs_emulator.c - emulates a simple file system using real files.
+ * Usage: ./fs_emulator <file system directory>
+ * Commands: ls, cd <name>, mkdir <name>, touch <name>, exit
+ */
+
 #include<stdio.h>
 #include<stdlib.h>
 #include<string.h>
@@ -6,6 +12,11 @@
 
 #define MAX_INODES 1024
 #define NAME_LEN 32
+#define LINE_LEN 1024
+
+/* One entry of inodes_list: its own number, the directory it is in,
+   type of file ('d' for directory, 'f' for file, 0 if the slot is unused),
+   and its name. The name might not end in '\0' if it uses all 32 characters. */
 typedef struct {
 	uint32_t inode;
 	uint32_t parentInode;
@@ -13,17 +24,20 @@ typedef struct {
 	char name[NAME_LEN];
 } Inode;
 
+/* All inodes, indexed by inode number. */
 Inode inodeList[MAX_INODES];
+
+/* Inode number of the directory the user is currently in. */
 uint32_t currentInode = 0;
 
 void loadInodeList(const char *path);
 void saveInodeList(const char *path);
 void changeDirectory(const char *name);
-void listContents();
+void listContents(void);
 void createDirectory(const char *name);
 void createFile(const char *name);
 int findEntry(const char *name);
-int findFreeInode();
+int findFreeInode(void);
 void createInode(const char *name, char type);
 int inCurrentDirectory(int i);
 
@@ -44,14 +58,15 @@ int main(int argc, char *argv[]) {
 		return 1;
 	}
 
-	char line[256];
+	char line[LINE_LEN];
 	while (1) {
 		printf("> ");
 		fflush(stdout);
 		if (fgets(line, sizeof(line), stdin) == NULL) {
+			printf("\n");
 			break;
 		}
-		char cmd[256], arg[256], extra[256];
+		char cmd[LINE_LEN], arg[LINE_LEN], extra[LINE_LEN];
 		int n = sscanf(line, "%s %s %s", cmd, arg, extra);
 		if (n < 1) {
 			continue;
@@ -61,9 +76,9 @@ int main(int argc, char *argv[]) {
 		} else if (n == 1 && strcmp(cmd, "ls") == 0) {
 			listContents();
 		} else if (n == 2 && strcmp(cmd, "cd") == 0) {
-		       	changeDirectory(arg);	
+			changeDirectory(arg);
 		} else if (n == 2 && strcmp(cmd, "touch") == 0) {
-		       	createFile(arg);	
+			createFile(arg);
 		} else if (n == 2 && strcmp(cmd, "mkdir") == 0) {
 			createDirectory(arg);
 		} else {
@@ -75,10 +90,8 @@ int main(int argc, char *argv[]) {
 	return 0;
 }
 
-/*
- * Loads the inodes_list file from the file system directory.
- * The user will start in the directory at inode 0, otherwise report an error and terminate.
- */
+/* Reads inodes_list and fills inodeList, using each entry's inode number
+   as its slot. Entries with a bad number or type are reported and skipped. */
 void loadInodeList(const char *path) {
 	FILE *fp = fopen(path, "rb");
 	if (fp == NULL) {
@@ -91,17 +104,13 @@ void loadInodeList(const char *path) {
 		if (temp.inode >= MAX_INODES || (temp.type != 'd' && temp.type != 'f')) {
 			printf("Invalid inode entry: %u\n", temp.inode);
 			continue;
-		} else {
-	 		inodeList[temp.inode] = temp;
-		}		
+		}
+		inodeList[temp.inode] = temp;
 	}
 	fclose(fp);
 }
 
-/*
- * On exit, saveInodeList() will update the inodes_list file in the file system
- * directory to reflect any modifications that were applied to the inodes.
- */
+/* Writes every in-use inode back to inodes_list. Called on exit. */
 void saveInodeList(const char *path) {
 	FILE *fp = fopen(path, "wb");
 	if (fp == NULL) {
@@ -117,11 +126,8 @@ void saveInodeList(const char *path) {
 	fclose(fp);
 }
 
-/*
- * Changes to the specified directory (by name) from the current directory.
- * The name of a directory must be given otherwise an error will be reported
- * and nothing will be changed.
- */
+/* Moves into the directory called name inside the current directory, or to
+   the parent for "..". Prints an error if name isn't a directory. */
 void changeDirectory(const char *name) {
 	if (strcmp(name, "..") == 0) {
 		currentInode = inodeList[currentInode].parentInode;
@@ -137,35 +143,28 @@ void changeDirectory(const char *name) {
 	}
 }
 
-// List the contents (names and inodes) of the current working directory.
-void listContents() {
+/* Lists the contents, name and inodes, of the current working directory. */
+void listContents(void) {
 	for (int i = 0; i < MAX_INODES; i++) {
 		if (inCurrentDirectory(i)) {
-			printf("inode: %u, type: %c, name: %.32s\n", inodeList[i].inode, inodeList[i].type, inodeList[i].name);
+			printf("inode: %u, type: %c, name: %.*s\n",
+			       inodeList[i].inode, inodeList[i].type, NAME_LEN, inodeList[i].name);
 		}
 	}
 }
 
-/*
- * Creates a new directory in the current directory with the given name.
- * Only works if there is an available inode and the contents of the directory
- * are updated. Otherwise, an error will be reported and it will continue if
- * there is already an entry in the current directory with this name.
- */
+/* Creates a directory called name in the current directory. Prints an error
+   if the name already exists or no inode is free. */
 void createDirectory(const char *name) {
 	if (findEntry(name) != -1) {
-		printf("%.32s already exists.\n", name);
+		printf("%.*s already exists.\n", NAME_LEN, name);
 		return;
 	}
 	createInode(name, 'd');
 }
 
-/*
- * Creates a regular file in the current directory with the given name.
- * Only works if there is an available inode and the contents of the directory
- * are updated. If there is already an entry with this name, then the command
- * will do nothing.
- */
+/* Creates a regular file called name in the current directory. Does nothing
+   if the name already exists or no inode is free. */
 void createFile(const char *name) {
 	if (findEntry(name) != -1) {
 		return;
@@ -173,7 +172,7 @@ void createFile(const char *name) {
 	createInode(name, 'f');
 }
 
-// Finds the inode that matches the name that was given, otherwise returns -1.
+/* Finds the inode that matches the name that was given, otherwise returns -1. */
 int findEntry(const char *name) {
 	for (int i = 0; i < MAX_INODES; i++) {
 		if (inCurrentDirectory(i) && strncmp(inodeList[i].name, name, NAME_LEN) == 0) {
@@ -183,8 +182,8 @@ int findEntry(const char *name) {
 	return -1;
 }
 
-// Finds the first available inode, otherwise returns -1.
-int findFreeInode() {
+/* Finds the first available inode, otherwise returns -1 */
+int findFreeInode(void) {
 	for (int i = 0; i < MAX_INODES; i++) {
 		if (inodeList[i].type == 0) {
 			return i;
@@ -193,7 +192,9 @@ int findFreeInode() {
 	return -1;
 }
 
-// Creates an inode and writes it into the inode file.
+/* Fills the first free slot with a new entry in the current directory and
+   creates its real file on disk (the name for a file, "." and ".." lines
+   for a directory). Prints an error and changes nothing if it can't. */
 void createInode(const char *name, char type) {
 	int slot = findFreeInode();
 	if (slot == -1) {
@@ -204,6 +205,7 @@ void createInode(const char *name, char type) {
 	inodeList[slot].parentInode = currentInode;
 	inodeList[slot].type = type;
 	strncpy(inodeList[slot].name, name, NAME_LEN);
+	
 	char filename[16];
 	snprintf(filename, sizeof(filename), "%u", inodeList[slot].inode);
 	FILE *fp = fopen(filename, "w");
@@ -213,14 +215,14 @@ void createInode(const char *name, char type) {
 		return;
 	}
 	if (type == 'f') {
-		fprintf(fp, "%.32s", inodeList[slot].name);
+		fprintf(fp, "%.*s", NAME_LEN, inodeList[slot].name);
 	} else {
 		fprintf(fp, "%u .\n%u ..\n", inodeList[slot].inode, inodeList[slot].parentInode);
 	}
 	fclose(fp);
 }
 
-// Checks if the inode is a used inode and if it is in the current directory.
+/* Checks if the inode is a used inode and if it is in the current directory. */
 int inCurrentDirectory(int i) {
 	return inodeList[i].type != 0 && inodeList[i].parentInode == currentInode;
 }
