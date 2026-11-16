@@ -75,6 +75,10 @@ int main(int argc, char *argv[]) {
 	return 0;
 }
 
+/*
+ * Loads the inodes_list file from the file system directory.
+ * The user will start in the directory at inode 0, otherwise report an error and terminate.
+ */
 void loadInodeList(const char *path) {
 	FILE *fp = fopen(path, "rb");
 	if (fp == NULL) {
@@ -94,6 +98,10 @@ void loadInodeList(const char *path) {
 	fclose(fp);
 }
 
+/*
+ * On exit, saveInodeList() will update the inodes_list file in the file system
+ * directory to reflect any modifications that were applied to the inodes.
+ */
 void saveInodeList(const char *path) {
 	FILE *fp = fopen(path, "wb");
 	if (fp == NULL) {
@@ -109,6 +117,11 @@ void saveInodeList(const char *path) {
 	fclose(fp);
 }
 
+/*
+ * Changes to the specified directory (by name) from the current directory.
+ * The name of a directory must be given otherwise an error will be reported
+ * and nothing will be changed.
+ */
 void changeDirectory(const char *name) {
 	if (strcmp(name, "..") == 0) {
 		currentInode = inodeList[currentInode].parentInode;
@@ -124,6 +137,7 @@ void changeDirectory(const char *name) {
 	}
 }
 
+// List the contents (names and inodes) of the current working directory.
 void listContents() {
 	for (int i = 0; i < MAX_INODES; i++) {
 		if (inCurrentDirectory(i)) {
@@ -132,13 +146,12 @@ void listContents() {
 	}
 }
 
-void createFile(const char *name) {
-	if (findEntry(name) != -1) {
-		return;
-	}
-	createInode(name, 'f');
-}
-
+/*
+ * Creates a new directory in the current directory with the given name.
+ * Only works if there is an available inode and the contents of the directory
+ * are updated. Otherwise, an error will be reported and it will continue if
+ * there is already an entry in the current directory with this name.
+ */
 void createDirectory(const char *name) {
 	if (findEntry(name) != -1) {
 		printf("%.32s already exists.\n", name);
@@ -147,6 +160,20 @@ void createDirectory(const char *name) {
 	createInode(name, 'd');
 }
 
+/*
+ * Creates a regular file in the current directory with the given name.
+ * Only works if there is an available inode and the contents of the directory
+ * are updated. If there is already an entry with this name, then the command
+ * will do nothing.
+ */
+void createFile(const char *name) {
+	if (findEntry(name) != -1) {
+		return;
+	}
+	createInode(name, 'f');
+}
+
+// Finds the inode that matches the name that was given, otherwise returns -1.
 int findEntry(const char *name) {
 	for (int i = 0; i < MAX_INODES; i++) {
 		if (inCurrentDirectory(i) && strncmp(inodeList[i].name, name, NAME_LEN) == 0) {
@@ -156,6 +183,7 @@ int findEntry(const char *name) {
 	return -1;
 }
 
+// Finds the first available inode, otherwise returns -1.
 int findFreeInode() {
 	for (int i = 0; i < MAX_INODES; i++) {
 		if (inodeList[i].type == 0) {
@@ -165,6 +193,7 @@ int findFreeInode() {
 	return -1;
 }
 
+// Creates an inode and writes it into the inode file.
 void createInode(const char *name, char type) {
 	int slot = findFreeInode();
 	if (slot == -1) {
@@ -191,6 +220,7 @@ void createInode(const char *name, char type) {
 	fclose(fp);
 }
 
+// Checks if the inode is a used inode and if it is in the current directory.
 int inCurrentDirectory(int i) {
 	return inodeList[i].type != 0 && inodeList[i].parentInode == currentInode;
 }
